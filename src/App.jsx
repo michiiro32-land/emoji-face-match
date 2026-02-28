@@ -138,16 +138,13 @@ export default function App() {
           const remaining = Math.max(0, SKIP_SEC - elapsedSec)
           setSkipLeft(Math.ceil(remaining))
           if (remaining <= 0) {
-            // 時間切れ → スキップ
+            // 時間切れ → スキップ（returnしない！ループ継続）
             g.exprIdx = (g.exprIdx + 1) % EXPRESSIONS.length
             setExprIdx(g.exprIdx)
             g.holdStart = null; g.exprStart = Date.now()
             g.conf = 0; setConf(0)
             setSkipped(true); setTimeout(() => setSkipped(false), 800)
-            return
-          }
-
-          if (c >= 1.0) {
+          } else if (c >= 1.0) {
             if (!g.holdStart) { g.holdStart = Date.now() }
             else if (Date.now() - g.holdStart > HOLD_MS) {
               // 達成！
