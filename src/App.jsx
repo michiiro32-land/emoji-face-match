@@ -77,7 +77,7 @@ export default function App() {
   const [flash, setFlash]     = useState(false)
   const [skipLeft, setSkipLeft] = useState(SKIP_SEC)
   const [skipped, setSkipped]   = useState(false)
-  const [dbgBS, setDbgBS]       = useState([])    // デバッグ用ブレンドシェイプ
+  const dbgBSRef = useRef([])    // デバッグ用（stateではなくrefで管理）
 
   const gRef = useRef({
     running: false, score: 0, exprIdx: 0, conf: 0,
@@ -133,12 +133,11 @@ export default function App() {
           const c = Math.min(1, expr.score(bs) / GOAL)
           g.conf = c
           setConf(c)
-          // デバッグ: 値が高いブレンドシェイプ上位10件
-          const top = [...bs]
+          // デバッグ: 値が高いブレンドシェイプ上位10件（refに保存→re-renderなし）
+          dbgBSRef.current = [...bs]
             .filter(b => b.score > 0.05)
             .sort((a,b) => b.score - a.score)
             .slice(0, 10)
-          setDbgBS(top)
 
           // スキップ判定
           const elapsedSec = (Date.now() - g.exprStart) / 1000
@@ -171,10 +170,28 @@ export default function App() {
       g.lastTime = now
     }
 
-    // 現在表情ラベル描画
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, H-48, W, 48)
-    ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'
-    ctx.fillStyle = '#aaa'; ctx.fillText('カメラに顔を向けてください', W/2, H-18)
+    // Canvas下部にヒントテキスト
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, H-36, W, 36)
+    ctx.font = '13px sans-serif'; ctx.textAlign = 'center'
+    ctx.fillStyle = '#aaa'; ctx.fillText('カメラに顔を向けてください', W/2, H-14)
+
+    // デバッグ: ブレンドシェイプ上位10件をCanvasに描画
+    const topBS = dbgBSRef.current
+    if (topBS.length > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'
+      ctx.fillRect(0, 0, 300, topBS.length * 18 + 24)
+      ctx.font = '11px monospace'; ctx.textAlign = 'left'
+      ctx.fillStyle = '#FFD700'
+      ctx.fillText(`🔍 DEBUG  conf:${Math.round(gRef.current.conf*100)}%`, 8, 16)
+      topBS.forEach((b, i) => {
+        const y = 28 + i * 18
+        const barW = Math.round(b.score * 140)
+        ctx.fillStyle = b.score > 0.5 ? '#43e97b' : b.score > 0.25 ? '#FFD700' : '#888'
+        ctx.fillRect(8, y, barW, 10)
+        ctx.fillStyle = '#fff'
+        ctx.fillText(`${b.categoryName.padEnd(28)} ${(b.score*100).toFixed(0)}%`, 154, y + 9)
+      })
+    }
 
     rafRef.current = requestAnimationFrame(loop)
   }, [])
@@ -370,36 +387,7 @@ export default function App() {
         </p>
       )}
 
-      {/* ── デバッグパネル ── */}
-      {phase === 'play' && dbgBS.length > 0 && (
-        <div style={{
-          marginTop:14, background:'rgba(0,0,0,0.6)',
-          borderRadius:12, padding:'12px 16px',
-          width: 680, maxWidth:'100%',
-          fontFamily:'monospace', fontSize:12,
-        }}>
-          <div style={{ color:'#888', marginBottom:8 }}>
-            🔍 ブレンドシェイプ（上位10件） — お題: {EXPRESSIONS[exprIdx].emoji} {EXPRESSIONS[exprIdx].id}
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px' }}>
-            {dbgBS.map(b => (
-              <div key={b.categoryName} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ color:'#aaa', minWidth:220 }}>{b.categoryName}</span>
-                <div style={{ flex:1, height:8, background:'#222', borderRadius:4, overflow:'hidden' }}>
-                  <div style={{
-                    height:'100%', borderRadius:4,
-                    width: `${b.score * 100}%`,
-                    background: b.score > 0.5 ? '#43e97b' : b.score > 0.25 ? '#FFD700' : '#555',
-                  }} />
-                </div>
-                <span style={{ color:'#fff', minWidth:38, textAlign:'right' }}>
-                  {(b.score * 100).toFixed(0)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* デバッグはCanvas内に描画 */}
     </div>
   )
 }
