@@ -74,9 +74,10 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(TOTAL_SEC)
   const [exprIdx, setExprIdx] = useState(0)
   const [conf, setConf]       = useState(0)
-  const [flash, setFlash]     = useState(false)   // 達成フラッシュ
-  const [skipLeft, setSkipLeft] = useState(SKIP_SEC)  // 残り時間
-  const [skipped, setSkipped]   = useState(false)     // スキップ表示
+  const [flash, setFlash]     = useState(false)
+  const [skipLeft, setSkipLeft] = useState(SKIP_SEC)
+  const [skipped, setSkipped]   = useState(false)
+  const [dbgBS, setDbgBS]       = useState([])    // デバッグ用ブレンドシェイプ
 
   const gRef = useRef({
     running: false, score: 0, exprIdx: 0, conf: 0,
@@ -132,6 +133,12 @@ export default function App() {
           const c = Math.min(1, expr.score(bs) / GOAL)
           g.conf = c
           setConf(c)
+          // デバッグ: 値が高いブレンドシェイプ上位10件
+          const top = [...bs]
+            .filter(b => b.score > 0.05)
+            .sort((a,b) => b.score - a.score)
+            .slice(0, 10)
+          setDbgBS(top)
 
           // スキップ判定
           const elapsedSec = (Date.now() - g.exprStart) / 1000
@@ -358,9 +365,40 @@ export default function App() {
       </div>
 
       {phase === 'play' && (
-        <p style={{ marginTop:10, fontSize:11, color:'#333' }}>
+        <p style={{ marginTop:10, fontSize:11, color:'#444' }}>
           各表情を {HOLD_MS/1000}秒キープすると次のお題へ • {TOTAL_SEC}秒間で何個マッチできる？
         </p>
+      )}
+
+      {/* ── デバッグパネル ── */}
+      {phase === 'play' && dbgBS.length > 0 && (
+        <div style={{
+          marginTop:14, background:'rgba(0,0,0,0.6)',
+          borderRadius:12, padding:'12px 16px',
+          width: 680, maxWidth:'100%',
+          fontFamily:'monospace', fontSize:12,
+        }}>
+          <div style={{ color:'#888', marginBottom:8 }}>
+            🔍 ブレンドシェイプ（上位10件） — お題: {EXPRESSIONS[exprIdx].emoji} {EXPRESSIONS[exprIdx].id}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px' }}>
+            {dbgBS.map(b => (
+              <div key={b.categoryName} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ color:'#aaa', minWidth:220 }}>{b.categoryName}</span>
+                <div style={{ flex:1, height:8, background:'#222', borderRadius:4, overflow:'hidden' }}>
+                  <div style={{
+                    height:'100%', borderRadius:4,
+                    width: `${b.score * 100}%`,
+                    background: b.score > 0.5 ? '#43e97b' : b.score > 0.25 ? '#FFD700' : '#555',
+                  }} />
+                </div>
+                <span style={{ color:'#fff', minWidth:38, textAlign:'right' }}>
+                  {(b.score * 100).toFixed(0)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
