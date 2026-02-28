@@ -15,9 +15,10 @@ const EXPRESSIONS = [
     emoji: '😮',
     label: 'びっくり！',
     color: '#FF6B9D',
-    score: (bs) => max(
-      avg(bs, ['eyeWideLeft','eyeWideRight']) * 0.6 + get(bs,'mouthOpen') * 0.4,
-      get(bs,'mouthOpen') * 0.7 + avg(bs,['browInnerUp']) * 0.3
+    // jawOpen（口を大きく開ける）が一番確実。眉も上げると完璧
+    score: (bs) => Math.min(1,
+      get(bs,'jawOpen') * 1.4 * 0.6 +
+      avg(bs,['browInnerUp','browOuterUpLeft','browOuterUpRight']) * 0.4
     ),
   },
   {
@@ -57,6 +58,7 @@ function max(...vals) { return Math.max(...vals) }
 const GOAL = 0.60       // この閾値を超えたら達成
 const HOLD_MS = 800     // 何ms維持したらカウント
 const TOTAL_SEC = 90    // ゲーム時間
+const SKIP_SEC = 7      // 何秒以内に一致しなかったらスキップ
 
 // ── メインコンポーネント ─────────────────────────────────
 export default function App() {
@@ -73,10 +75,12 @@ export default function App() {
   const [exprIdx, setExprIdx] = useState(0)
   const [conf, setConf]       = useState(0)
   const [flash, setFlash]     = useState(false)   // 達成フラッシュ
+  const [skipLeft, setSkipLeft] = useState(SKIP_SEC)  // 残り時間
+  const [skipped, setSkipped]   = useState(false)     // スキップ表示
 
   const gRef = useRef({
     running: false, score: 0, exprIdx: 0, conf: 0,
-    holdStart: null, lastTime: 0,
+    holdStart: null, lastTime: 0, exprStart: 0,
   })
 
   // ── モデル読み込み ──
@@ -129,6 +133,20 @@ export default function App() {
           g.conf = c
           setConf(c)
 
+          // スキップ判定
+          const elapsedSec = (Date.now() - g.exprStart) / 1000
+          const remaining = Math.max(0, SKIP_SEC - elapsedSec)
+          setSkipLeft(Math.ceil(remaining))
+          if (remaining <= 0) {
+            // 時間切れ → スキップ
+            g.exprIdx = (g.exprIdx + 1) % EXPRESSIONS.length
+            setExprIdx(g.exprIdx)
+            g.holdStart = null; g.exprStart = Date.now()
+            g.conf = 0; setConf(0)
+            setSkipped(true); setTimeout(() => setSkipped(false), 800)
+            return
+          }
+
           if (c >= 1.0) {
             if (!g.holdStart) { g.holdStart = Date.now() }
             else if (Date.now() - g.holdStart > HOLD_MS) {
@@ -137,7 +155,7 @@ export default function App() {
               setScore(g.score)
               g.exprIdx = (g.exprIdx + 1) % EXPRESSIONS.length
               setExprIdx(g.exprIdx)
-              g.holdStart = null
+              g.holdStart = null; g.exprStart = Date.now()
               g.conf = 0; setConf(0)
               setFlash(true); setTimeout(() => setFlash(false), 400)
             }
@@ -172,8 +190,8 @@ export default function App() {
       if (!detRef.current) await loadModel()
 
       const g = gRef.current
-      Object.assign(g, { running:true, score:0, exprIdx:0, conf:0, holdStart:null, lastTime:0 })
-      setScore(0); setExprIdx(0); setConf(0); setTimeLeft(TOTAL_SEC)
+      Object.assign(g, { running:true, score:0, exprIdx:0, conf:0, holdStart:null, lastTime:0, exprStart:Date.now() })
+      setScore(0); setExprIdx(0); setConf(0); setTimeLeft(TOTAL_SEC); setSkipLeft(SKIP_SEC); setSkipped(false)
 
       setPhase('play')
       requestAnimationFrame(loop)
@@ -290,19 +308,34 @@ export default function App() {
               <div style={{ fontSize:11, color:'#888', marginBottom:8, letterSpacing:1 }}>お題</div>
               <div style={{
                 fontSize:90, lineHeight:1,
-                filter: flash ? `drop-shadow(0 0 20px ${expr.color})` : 'none',
+                filter: flash ? `drop-shadow(0 0 20px ${expr.color})` : skipped ? 'grayscale(1)' : 'none',
                 transition:'filter 0.1s',
               }}>{expr.emoji}</div>
-              <div style={{
-                fontSize:20, fontWeight:800, marginTop:12,
-                color: expr.color,
-              }}>{expr.label}</div>
+              <div style={{ fontSize:20, fontWeight:800, marginTop:12, color: skipped ? '#FF6644' : expr.color }}>
+                {skipped ? '💨 スキップ！' : expr.label}
+              </div>
+              {/* スキップカウントダウン */}
+              <div style={{ marginTop:8, fontSize:12, color: skipLeft <= 3 ? '#FF6644' : '#555', fontWeight: skipLeft <= 3 ? 700 : 400 }}>
+                {skipLeft <= 3 ? `⚠️ あと${skipLeft}秒…` : `残り ${skipLeft}秒`}
+              </div>
             </div>
 
             {/* 信頼度メーター */}
             <div style={{ width:'100%' }}>
               <div style={{ fontSize:12, color:'#888', marginBottom:6, textAlign:'center' }}>
                 一致度: {pct}%
+              </div>
+              {/* スキップ進捗バー */}
+              <div style={{
+                width:'100%', height:4, background:'rgba(255,255,255,0.08)',
+                borderRadius:4, marginBottom:8, overflow:'hidden',
+              }}>
+                <div style={{
+                  height:'100%', borderRadius:4,
+                  width: `${((SKIP_SEC - skipLeft) / SKIP_SEC) * 100}%`,
+                  background: skipLeft <= 3 ? '#FF6644' : '#555',
+                  transition:'width 0.5s linear',
+                }} />
               </div>
               <div style={{
                 width:'100%', height:16, background:'rgba(255,255,255,0.1)',
